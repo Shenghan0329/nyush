@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <stdarg.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 
 #include "console.h"
@@ -12,6 +14,7 @@
 char * invalidCommand = "Error: invalid command\n";
 char * invalidDirectory = "Error: invalid directory\n";
 char * invalidProgram = "Error: invalid program\n";
+char * invalidFile = "Error: invalid file\n";
 
 char * builtInCommands[] = {"cd","jobs","fg","exit"};
 char * signals[] = {"|", ">", ">>", "<"};
@@ -94,13 +97,36 @@ int cd(char* dir,int argNum){
 }
 
 // Reference: inclass notes
-int run(char* path, char ** args,int argc){
-    // printf("%s %d ", path, (int) strlen(path));
-    // printf("\n");
+int run(char* path, char ** args,int append, char* input, char* output){
     pid_t pid=fork();
-    if(pid==0){
-        for(int i = 0; i< argc; i++){
-            // printf("%s %d\n", args[i], (int) strlen(args[i]));
+    if(pid==0){        
+        // Handle Input and Output
+        // Reference: https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
+        // Reference: https://www.geeksforgeeks.org/input-output-system-calls-c-create-open-close-read-write/
+        if (input != NULL) {
+            int fd;
+            if((fd=open(input, O_RDONLY)) < 0){
+                printf(invalidFile);
+                exit(-1);
+            }
+            if (dup2(fd, STDIN_FILENO) == -1) {
+                printf("Dup2 input failed\n");
+            }
+            close(fd);
+        }
+        if (output != NULL) {
+            int fd2;
+            printf("%d\n",append);
+            // Reference: https://stackoverflow.com/questions/23092040/how-to-open-a-file-which-overwrite-existing-content
+            fd2 = append == 0 ? open(output, O_WRONLY | O_CREAT | O_TRUNC,0644):open(output, O_WRONLY | O_APPEND | O_CREAT,0644);
+            if (fd2< 0) {
+                printf(invalidFile);
+                exit(-1);
+            }
+            if (dup2(fd2, STDOUT_FILENO) == -1) {
+                printf("Dup2 output failed\n");
+            }
+            close(fd2);
         }
         execv(path,args);
         printf(invalidProgram);
@@ -114,8 +140,9 @@ int run(char* path, char ** args,int argc){
     }
     return 0;
 }
+
 // Execute Command
-int exec(int argc, char ** argv){
+int exec(int argc, char ** argv, char * input, char * output, int append){
     if (argc == 0){
         return -1;
     }
@@ -131,11 +158,11 @@ int exec(int argc, char ** argv){
             path[i+9] = cmd[i];
         }
         path[cmdLen+9] = '\0';
-        result = run(path,argv,argc);
+        result = run(path,argv,append, input, output);
     }
     // Case 2: cmd starts with /
     else if(cmd[0]=='/'){
-        result = run(cmd,argv,argc);
+        result = run(cmd,argv,append,input, output);
     }
     // Case 3: cmd relative path
     else{
@@ -145,7 +172,7 @@ int exec(int argc, char ** argv){
             path[i+2] = cmd[i];
         }
         path[cmdLen+2] = '\0';
-        result = run(path, argv, argc);   
+        result = run(path, argv, append, input, output);   
     }
     return result;
 }
@@ -160,6 +187,12 @@ void manipulate_args(int argc, char ** argv){
     }
     // Store current command, pipe, result of command, and whether to execute
     char ** currCmd = (char**) malloc((argc+1)*sizeof(char*));
+    char * input;
+    char * output;
+    input = NULL;
+    output = NULL;
+    int acceptCommand = 1;
+    int append = 0;
     int cmdSize = 0;
     char currSignal[2];
     currSignal[1] = '\0';
@@ -180,19 +213,31 @@ void manipulate_args(int argc, char ** argv){
     // Signals and other commands
     for (int i = 0; i < argc; ++i) {
         // Face signals
-        if(isSignal(argv[i])==1){
+        // if(isSignal(argv[i])==1){
+        if(strcmp(argv[i],"|")==0){
             strncpy(currSignal,argv[i],2);
             toExe = 1;
+            acceptCommand = 1;
         }
         // Store commands
         else{
-            currCmd[cmdSize] = argv[i];
-            cmdSize ++;
+            if(strcmp(argv[i],"<")==0){
+                input = argv[i+1];
+                acceptCommand = 0;
+            }else if(strcmp(argv[i],">")==0||strcmp(argv[i],">>")==0){
+                append = strcmp(argv[i],">>") == 0 ? 1 : 0;
+                output = argv[i+1];
+                acceptCommand = 0;
+            }
+            if(acceptCommand == 1){
+                currCmd[cmdSize] = argv[i];
+                cmdSize ++;
+            }
         }
         // execute command when the argv end or toExe==1, then empty the currCmd
         if(i == argc-1 || toExe == 1){
             currCmd[cmdSize] = NULL;
-            currResult = exec(cmdSize, currCmd);
+            currResult = exec(cmdSize, currCmd,input,output, append);
             // if exec fails, return error and free(currCmd)
             if(currResult != 0){
                 free(currCmd);
