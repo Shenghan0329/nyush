@@ -15,6 +15,7 @@ char * invalidCommand = "Error: invalid command\n";
 char * invalidDirectory = "Error: invalid directory\n";
 char * invalidProgram = "Error: invalid program\n";
 char * invalidFile = "Error: invalid file\n";
+char * suspendedJobs = "Error: there are suspended jobs\n";
 
 char * builtInCommands[] = {"cd","jobs","fg","exit"};
 char * signals[] = {"|", ">", ">>", "<"};
@@ -81,19 +82,34 @@ int isValid(int argc, char ** argv){
 }
 
 // BUILDIN CD
-int cd(char* dir,int argNum){
+void cd(char* dir,int argNum){
     // Check if too many or too few arguments
-    if(argNum != 1)
-        return -1;
+    if(argNum != 1){
+        printf("%s",invalidCommand);
+        return;
+    }
     // Reference: https://www.geeksforgeeks.org/how-to-check-a-file-or-directory-exists-in-cpp/
     // Check if Directory valid
     struct stat sb;
-    if (stat(dir, &sb) != 0)
-        return -2;
-    char s[100];
-    getcwd(s, 100);
+    if (stat(dir, &sb) != 0){
+        printf("%s",invalidDirectory);
+        return;
+    }
+    char s[1000];
+    getcwd(s, 1000);
     chdir(dir);
-    return 0;
+    return;
+}
+// BUITDIN EXIT
+void ex(pid_t * suspended, int argNum){
+    if(argNum != 0){
+        printf(invalidCommand);
+        return;
+    }else if(suspended[0] != 0){
+        printf(suspendedJobs);
+        return;
+    }
+    raise(SIGTERM);
 }
 
 // Reference: inclass notes
@@ -128,7 +144,9 @@ int run(char* path, char ** args,int append, char* input, char* output, int* fd,
             }
             close(fd2);
         }
-         // Handle pipes
+        // Handle pipes
+        // Reference: https://www.geeksforgeeks.org/pipe-system-call/   
+        // Reference: https://gist.github.com/aspatic/93e197083b65678a132b9ecee53cfe86
         dup2(*fdd, 0);
         if (terminate != 1) {
             dup2(fd[1], 1);
@@ -193,7 +211,7 @@ int exec(int argc, char ** argv, char * input, char * output, int append, int* f
 // [nyush lab2]$
 // argc: number of arguments
 // argv: an array of arguments
-void manipulate_args(int argc, char ** argv){
+void manipulate_args(int argc, char ** argv, pid_t * suspended){
     if(isValid(argc,argv)==-1){
         printf("%s",invalidCommand);
         return;
@@ -218,14 +236,14 @@ void manipulate_args(int argc, char ** argv){
 
     // Builtin commands with highest priority
     // BUILTIN cd
-    // if(strcmp(argv[0], "cd")==0){
-    //     if(cd(argv[1],argc-1)==-1){
-    //         printf("%s",invalidCommand);
-    //     }else if(cd(argv[1],argc-1)==-2){
-    //         printf("%s",invalidDirectory);
-    //     }
-    //     return;
-    // }
+    if(strcmp(argv[0], "cd") == 0){
+        cd(argv[1],argc-1);
+        return;
+    }
+    if(strcmp(argv[0], "exit") == 0){
+        ex(suspended,argc-1);
+        return;
+    }
     
     // Signals and other commands
     for (int i = 0; i < argc; ++i) {
