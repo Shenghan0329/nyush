@@ -97,26 +97,26 @@ int cd(char* dir,int argNum){
 }
 
 // Reference: inclass notes
-int run(char* path, char ** args,int append, char* input, char* output){
+int run(char* path, char ** args,int append, char* input, char* output, int* fd, int* fdd, int terminate){
+    pipe(fd);
     pid_t pid=fork();
-    if(pid==0){        
+    if(pid==0){   
         // Handle Input and Output
         // Reference: https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
         // Reference: https://www.geeksforgeeks.org/input-output-system-calls-c-create-open-close-read-write/
         if (input != NULL) {
-            int fd;
-            if((fd=open(input, O_RDONLY)) < 0){
+            int fd1;
+            if((fd1=open(input, O_RDONLY)) < 0){
                 printf(invalidFile);
                 exit(-1);
             }
-            if (dup2(fd, STDIN_FILENO) == -1) {
+            if (dup2(fd1, STDIN_FILENO) == -1) {
                 printf("Dup2 input failed\n");
             }
-            close(fd);
+            close(fd1);
         }
         if (output != NULL) {
             int fd2;
-            printf("%d\n",append);
             // Reference: https://stackoverflow.com/questions/23092040/how-to-open-a-file-which-overwrite-existing-content
             fd2 = append == 0 ? open(output, O_WRONLY | O_CREAT | O_TRUNC,0644):open(output, O_WRONLY | O_APPEND | O_CREAT,0644);
             if (fd2< 0) {
@@ -128,21 +128,34 @@ int run(char* path, char ** args,int append, char* input, char* output){
             }
             close(fd2);
         }
+         // Handle pipes
+        dup2(*fdd, 0);
+        if (terminate != 1) {
+            dup2(fd[1], 1);
+        }
+        close(fd[0]); 
         execv(path,args);
         printf(invalidProgram);
         exit(-1);
     }
-    int status; 
-    // Get child return, reference: https://www.geeksforgeeks.org/exit-status-child-process-linux/
-    waitpid(pid, &status, 0);
-    if ( WIFEXITED(status) > 0 ){
+    // Unfortunately if fork fails
+    else if(pid<0){
+        printf("Unable to create child process\n");
         return -1;
     }
-    return 0;
+    // Parent process
+    else{
+        int status; 
+        // Get child return, reference: https://www.geeksforgeeks.org/exit-status-child-process-linux/
+        waitpid(pid, &status, 0);
+        close(fd[1]);
+		*fdd = fd[0];
+        return 0;
+    }
 }
 
 // Execute Command
-int exec(int argc, char ** argv, char * input, char * output, int append){
+int exec(int argc, char ** argv, char * input, char * output, int append, int* fd, int* fdd, int terminate){
     if (argc == 0){
         return -1;
     }
@@ -158,11 +171,11 @@ int exec(int argc, char ** argv, char * input, char * output, int append){
             path[i+9] = cmd[i];
         }
         path[cmdLen+9] = '\0';
-        result = run(path,argv,append, input, output);
+        result = run(path,argv,append, input, output, fd, fdd, terminate);
     }
     // Case 2: cmd starts with /
     else if(cmd[0]=='/'){
-        result = run(cmd,argv,append,input, output);
+        result = run(cmd,argv,append,input, output, fd, fdd, terminate);
     }
     // Case 3: cmd relative path
     else{
@@ -172,7 +185,7 @@ int exec(int argc, char ** argv, char * input, char * output, int append){
             path[i+2] = cmd[i];
         }
         path[cmdLen+2] = '\0';
-        result = run(path, argv, append, input, output);   
+        result = run(path, argv, append, input, output, fd, fdd, terminate);   
     }
     return result;
 }
@@ -185,6 +198,10 @@ void manipulate_args(int argc, char ** argv){
         printf("%s",invalidCommand);
         return;
     }
+    // Pipe
+    int fd[2];
+    int fdd = 0;
+    int terminate = 0;
     // Store current command, pipe, result of command, and whether to execute
     char ** currCmd = (char**) malloc((argc+1)*sizeof(char*));
     char * input;
@@ -237,7 +254,9 @@ void manipulate_args(int argc, char ** argv){
         // execute command when the argv end or toExe==1, then empty the currCmd
         if(i == argc-1 || toExe == 1){
             currCmd[cmdSize] = NULL;
-            currResult = exec(cmdSize, currCmd,input,output, append);
+            if(i == argc - 1)
+                terminate = 1;
+            currResult = exec(cmdSize, currCmd,input,output, append,fd,&fdd, terminate);
             // if exec fails, return error and free(currCmd)
             if(currResult != 0){
                 free(currCmd);
@@ -247,6 +266,8 @@ void manipulate_args(int argc, char ** argv){
             free(currCmd);
             currCmd = (char**) malloc((argc+1)*sizeof(char*));
             toExe = 0;
+            input = NULL;
+            output = NULL;
         }
     }
     free(currCmd);

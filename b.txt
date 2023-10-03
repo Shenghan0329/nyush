@@ -1,11 +1,2 @@
-total 84
--rwxrwxrwx 1 root  root    224 Sep 27 16:51 Makefile
----------- 1 root  root     34 Oct  2 18:32 a.txt
--rw-r--r-- 1 root  root      0 Oct  2 18:58 b.txt
--rw-r--r-- 1 root  root   8413 Oct  2 18:58 console.c
--rw------- 1 14388 14388    95 Oct  1 00:11 console.h
--rw-r--r-- 1 root  root  17496 Oct  2 18:58 console.o
--rwxr-xr-x 1 root  root  38320 Oct  2 18:58 nyush
--rwxrwxrwx 1 root  root   1143 Oct  2 17:04 nyush.c
--rw-r--r-- 1 root  root   7296 Oct  2 18:13 nyush.o
--rwxrwxrwx 1 root  root     32 Oct  2 18:48 t.txt
+Hello world abc
+
