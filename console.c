@@ -43,13 +43,14 @@ void ctrlZ(int sig){
       kill(currentProcess,SIGTSTP);
       suspendedProcess[processIndex] = currentProcess;
       int i = 0;
-      char* copyName[MAX_ARG_NUMS];
-      char copyArg[MAX_ARG_NUMS][100];
+      char** copyName = (char**) malloc(100*sizeof(char*));
       while(currCommandName[i] != NULL){
-        strncpy(copyArg[i],currCommandName[i],100);
-        copyName[i] = copyArg[i];
+        char* copyArg = (char*) malloc(100*sizeof(char));
+        strncpy(copyArg,currCommandName[i],100);
+        copyName[i] = copyArg;
         i++;
       }
+      copyName[i] = NULL;
       suspendedCommandName[processIndex] = copyName;
       processIndex ++;
       currentProcess = 0;
@@ -178,6 +179,12 @@ void fg(int index, int argNum){
         return;
     }
     kill(suspendedProcess[index-1], SIGCONT);
+    int x = 0;
+    while(suspendedCommandName[index-1][x] != NULL){
+        free(suspendedCommandName[index-1][x]);
+        x++;
+    }
+    free(suspendedCommandName[index-1]);
     for(int i = index-1; i<processIndex-1; i++){
         suspendedCommandName[i] = suspendedCommandName[i+1];
         suspendedProcess[i] = suspendedProcess[i+1];
