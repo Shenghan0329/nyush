@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/wait.h>
 
 #include "console.h"
@@ -113,10 +114,11 @@ void ex(pid_t * suspended, int argNum){
 }
 
 // Reference: inclass notes
-int run(char* path, char ** args,int append, char* input, char* output, int* fd, int* fdd, int terminate){
+int run(char* path, char ** args,int append, char* input, char* output, int* fd, int* fdd, int terminate, pid_t* currentProcess){
     pipe(fd);
     pid_t pid=fork();
-    if(pid==0){   
+    *currentProcess = pid;
+    if(pid==0){ 
         // Handle Input and Output
         // Reference: https://www.geeksforgeeks.org/dup-dup2-linux-system-call/
         // Reference: https://www.geeksforgeeks.org/input-output-system-calls-c-create-open-close-read-write/
@@ -165,15 +167,20 @@ int run(char* path, char ** args,int append, char* input, char* output, int* fd,
     else{
         int status; 
         // Get child return, reference: https://www.geeksforgeeks.org/exit-status-child-process-linux/
-        waitpid(pid, &status, 0);
+        int p = waitpid(pid, &status, WUNTRACED);
+        if(WIFSTOPPED(status)){
+            printf("%d Stopped by %d\n",p,WIFSTOPPED(status));
+        }
         close(fd[1]);
 		*fdd = fd[0];
+        *currentProcess = 0;
         return 0;
     }
 }
 
 // Execute Command
-int exec(int argc, char ** argv, char * input, char * output, int append, int* fd, int* fdd, int terminate){
+int exec(int argc, char ** argv, char * input, char * output, int append, int* fd, int* fdd, int terminate, pid_t * currentProcess){
+    // handle Signals
     if (argc == 0){
         return -1;
     }
@@ -189,11 +196,11 @@ int exec(int argc, char ** argv, char * input, char * output, int append, int* f
             path[i+9] = cmd[i];
         }
         path[cmdLen+9] = '\0';
-        result = run(path,argv,append, input, output, fd, fdd, terminate);
+        result = run(path,argv,append, input, output, fd, fdd, terminate, currentProcess);
     }
     // Case 2: cmd starts with /
     else if(cmd[0]=='/'){
-        result = run(cmd,argv,append,input, output, fd, fdd, terminate);
+        result = run(cmd,argv,append,input, output, fd, fdd, terminate, currentProcess);
     }
     // Case 3: cmd relative path
     else{
@@ -203,7 +210,7 @@ int exec(int argc, char ** argv, char * input, char * output, int append, int* f
             path[i+2] = cmd[i];
         }
         path[cmdLen+2] = '\0';
-        result = run(path, argv, append, input, output, fd, fdd, terminate);   
+        result = run(path, argv, append, input, output, fd, fdd, terminate, currentProcess);   
     }
     return result;
 }
@@ -211,7 +218,11 @@ int exec(int argc, char ** argv, char * input, char * output, int append, int* f
 // [nyush lab2]$
 // argc: number of arguments
 // argv: an array of arguments
-void manipulate_args(int argc, char ** argv, pid_t * suspended){
+void manipulate_args(int argc, char ** argv, int toBreak, pid_t* currentProcess, pid_t* suspendProcess){
+    if(toBreak == 1){
+        printf("\n");
+        return;
+    }
     if(isValid(argc,argv)==-1){
         printf("%s",invalidCommand);
         return;
@@ -241,7 +252,7 @@ void manipulate_args(int argc, char ** argv, pid_t * suspended){
         return;
     }
     if(strcmp(argv[0], "exit") == 0){
-        ex(suspended,argc-1);
+        ex(suspendProcess,argc-1);
         return;
     }
     
@@ -274,7 +285,7 @@ void manipulate_args(int argc, char ** argv, pid_t * suspended){
             currCmd[cmdSize] = NULL;
             if(i == argc - 1)
                 terminate = 1;
-            currResult = exec(cmdSize, currCmd,input,output, append,fd,&fdd, terminate);
+            currResult = exec(cmdSize, currCmd,input,output, append,fd,&fdd, terminate, currentProcess);
             // if exec fails, return error and free(currCmd)
             if(currResult != 0){
                 free(currCmd);
