@@ -2,6 +2,7 @@
     "files.associations": {
         "console.h": "c",
         "unistd.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "signal.h": "c"
     }
 }
