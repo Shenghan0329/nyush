@@ -1,0 +1,12 @@
+total 100
+-rwxrwxrwx 1 root  root    224 Sep 27 16:51 Makefile
+---------- 1 root  root     32 Oct  4 07:21 a.txt
+-rwxrwxrwx 1 root  root     64 Oct  3 04:54 b.txt
+-rwxrwxrwx 1 root  root  13649 Oct  4 07:13 console.c
+-rw------- 1 14388 14388   144 Oct  4 06:10 console.h
+-rw-r--r-- 1 root  root  29368 Oct  4 07:13 console.o
+-rwxr-xr-x 1 root  root  44800 Oct  4 07:13 nyush
+-rwxrwxrwx 1 root  root    195 Oct  4 05:10 nyush.c
+-rw-r--r-- 1 root  root   3240 Oct  4 06:10 nyush.o
+-rw-r--r-- 1 root  root      0 Oct  4 07:13 output.txt
+-rwxrwxrwx 1 root  root     32 Oct  2 18:48 t.txt
