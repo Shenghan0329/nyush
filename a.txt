@@ -1,14 +1,2 @@
-.
-..
-.git
-.vscode
-Makefile
-a.txt
-b.txt
-console.c
-console.h
-console.o
-nyush
-nyush.c
-nyush.o
-t.txt
+Hello world abc
+cde following

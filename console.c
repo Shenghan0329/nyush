@@ -8,15 +8,62 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <limits.h>
 #include <sys/wait.h>
 
 #include "console.h"
+#define MAX_INPUT_LENGTH 1024
+#define MAX_ARG_NUMS 100
+#define MAX_SUSPEND 100
+
+// Global Storage
+static pid_t suspendedProcess[MAX_SUSPEND];
+int processIndex = 0;
+static char** suspendedCommandName[MAX_SUSPEND];
+static char* currCommandName[MAX_ARG_NUMS];
+static pid_t currentProcess = 0;
+
+int toBreak = 0;
+
+// Handle Signal
+void ctrlC(int sig){
+    if(sig != -1){
+    }
+    if(currentProcess != 0){
+        kill(currentProcess,SIGTERM);
+        currentProcess = 0;
+    }
+    toBreak = 1;
+    printf("\n");
+}
+void ctrlZ(int sig){
+    if(sig != -1){
+    }
+    if(currentProcess != 0){
+      kill(currentProcess,SIGTSTP);
+      suspendedProcess[processIndex] = currentProcess;
+      int i = 0;
+      char* copyName[MAX_ARG_NUMS];
+      char copyArg[MAX_ARG_NUMS][100];
+      while(currCommandName[i] != NULL){
+        strncpy(copyArg[i],currCommandName[i],100);
+        copyName[i] = copyArg[i];
+        i++;
+      }
+      suspendedCommandName[processIndex] = copyName;
+      processIndex ++;
+      currentProcess = 0;
+    }
+    printf("\n");
+    toBreak = 1;
+}
 
 char * invalidCommand = "Error: invalid command\n";
 char * invalidDirectory = "Error: invalid directory\n";
 char * invalidProgram = "Error: invalid program\n";
 char * invalidFile = "Error: invalid file\n";
 char * suspendedJobs = "Error: there are suspended jobs\n";
+char * invalidJob = "Error: invalid job\n";
 
 char * builtInCommands[] = {"cd","jobs","fg","exit"};
 char * signals[] = {"|", ">", ">>", "<"};
@@ -101,12 +148,51 @@ void cd(char* dir,int argNum){
     chdir(dir);
     return;
 }
-// BUITDIN EXIT
-void ex(pid_t * suspended, int argNum){
+// BUILDIN JOBS
+void jobs(int argNum){
     if(argNum != 0){
         printf(invalidCommand);
         return;
-    }else if(suspended[0] != 0){
+    }
+    if(suspendedProcess[0] != 0){
+        for(int i = 0; i<processIndex; i++){
+            printf("[%d] ",i+1);
+            int j = 0;
+            while(suspendedCommandName[i][j] != NULL){
+                printf("%s ",suspendedCommandName[i][j++]);
+            }
+            printf("\n");
+        }
+        
+    }
+    return;
+}
+// BUILDIN FG
+void fg(int index, int argNum){
+    if(argNum != 1){
+        printf(invalidCommand);
+        return;
+    }
+    if(index<1 || index > processIndex){
+        printf(invalidJob);
+        return;
+    }
+    kill(suspendedProcess[index-1], SIGCONT);
+    for(int i = index-1; i<processIndex-1; i++){
+        suspendedCommandName[i] = suspendedCommandName[i+1];
+        suspendedProcess[i] = suspendedProcess[i+1];
+    }
+    suspendedCommandName[processIndex-1] = NULL;
+    suspendedProcess[processIndex-1] = 0;
+    processIndex --;
+    return;
+}
+// BUITDIN EXIT
+void ex(int argNum){
+    if(argNum != 0){
+        printf(invalidCommand);
+        return;
+    }else if(suspendedProcess[0] != 0){
         printf(suspendedJobs);
         return;
     }
@@ -167,10 +253,7 @@ int run(char* path, char ** args,int append, char* input, char* output, int* fd,
     else{
         int status; 
         // Get child return, reference: https://www.geeksforgeeks.org/exit-status-child-process-linux/
-        int p = waitpid(pid, &status, WUNTRACED);
-        if(WIFSTOPPED(status)){
-            printf("%d Stopped by %d\n",p,WIFSTOPPED(status));
-        }
+        waitpid(pid, &status, WUNTRACED);
         close(fd[1]);
 		*fdd = fd[0];
         *currentProcess = 0;
@@ -218,7 +301,7 @@ int exec(int argc, char ** argv, char * input, char * output, int append, int* f
 // [nyush lab2]$
 // argc: number of arguments
 // argv: an array of arguments
-void manipulate_args(int argc, char ** argv, int toBreak, pid_t* currentProcess, pid_t* suspendProcess){
+void manipulate_args(int argc, char ** argv, int toBreak, pid_t* currentProcess){
     if(toBreak == 1){
         printf("\n");
         return;
@@ -251,8 +334,19 @@ void manipulate_args(int argc, char ** argv, int toBreak, pid_t* currentProcess,
         cd(argv[1],argc-1);
         return;
     }
+    // BUILDIN jobs
+    if(strcmp(argv[0], "jobs") == 0){
+        jobs(argc-1);
+        return;
+    }
+    // BUILDIN fg
+    if(strcmp(argv[0], "fg") == 0){
+        fg(atoi(argv[1]),argc-1);
+        return;
+    }
+    // BUILDIN exit
     if(strcmp(argv[0], "exit") == 0){
-        ex(suspendProcess,argc-1);
+        ex(argc-1);
         return;
     }
     
@@ -301,8 +395,52 @@ void manipulate_args(int argc, char ** argv, int toBreak, pid_t* currentProcess,
     }
     free(currCmd);
 }
-// Retrieve the length of the string
-// int len;  
-// for (len = 0; argv[i][len] != '\0'; ++len);
-// printf("%s ",argv[i]);
 
+int shell() {
+  signal(SIGINT, ctrlC);
+  signal(SIGQUIT, ctrlZ);
+  // SHELL
+  char input[MAX_INPUT_LENGTH];
+  int flag = 0;
+  while(flag == 0){
+    // Print Shell Prompt
+    // Reference: https://stackoverflow.com/questions/298510/how-to-get-the-current-directory-in-a-c-program
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("[nyush %s]$ ", cwd);
+    } else {
+        perror("getcwd() error");
+        return 1;
+    }
+
+    // Read user input
+    if (fgets(input, sizeof(input), stdin) == NULL) {
+      continue; 
+    }
+    
+    input[strcspn(input, "\n")] = '\0';
+    // Process user input as parameters of manipulate_args()
+    char *token;
+    char *args[MAX_ARG_NUMS]; 
+    int num = 0;
+    if(strlen(input)==0){
+      continue;
+    }
+    if(toBreak == 1){
+      toBreak = 0;
+      continue;
+    }
+    token = strtok(input, " "); // Split by space
+    while (token != NULL) {
+      currCommandName[num] = token;
+      args[num] = token;
+      token = strtok(NULL, " ");
+      num++;
+    }
+    currCommandName[num] = NULL;
+    // Call Terminal function to process the arguments
+    manipulate_args(num, args, toBreak,&currentProcess);
+    toBreak = 0;
+  }
+  return 0;
+}
