@@ -3,6 +3,10 @@
         "console.h": "c",
         "unistd.h": "c",
         "string.h": "c",
-        "signal.h": "c"
+        "signal.h": "c",
+        "errors.h": "c",
+        "constants.h": "c",
+        "validate.h": "c",
+        "stdlib.h": "c"
     }
 }
